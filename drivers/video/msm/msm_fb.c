@@ -69,7 +69,7 @@ extern int load_888rle_image(char *filename);
 #endif
 #endif
 
-/* ɾ���˶δ��� */
+/* É¾³ý´Ë¶Î´úÂë */
 
 /*modify the number of framebuffer*/
 /*Add 4 framebuffer and delete the mem adapter strategy*/	
@@ -146,7 +146,7 @@ int msm_fb_config_cabc(struct msm_fb_data_type *mfd, struct msmfb_cabc_config ca
 int msm_fb_set_dynamic_gamma(struct msm_fb_data_type *mfd, enum danymic_gamma_mode gamma_mode);
 #endif
 
-/* ɾ���˶δ��� */
+/* É¾³ý´Ë¶Î´úÂë */
 
 #ifdef MSM_FB_ENABLE_DBGFS
 
@@ -1924,7 +1924,7 @@ static int msm_fb_pan_display(struct fb_var_screeninfo *var,
     static bool is_first_frame = TRUE;
 #endif
 
-/* ɾ���˶δ��� */
+/* É¾³ý´Ë¶Î´úÂë */
     
 	/*
 	 * If framebuffer is 2, io pen display is not allowed.
@@ -2421,7 +2421,7 @@ int mdp_blit(struct fb_info *info, struct mdp_blit_req *req)
 	}
 #endif
 
-/* ɾ���˶δ��� */
+/* É¾³ý´Ë¶Î´úÂë */
 
 	if (unlikely(req->src_rect.h == 0 || req->src_rect.w == 0)) {
 		printk(KERN_ERR "mpd_ppp: src img of zero size!\n");
@@ -3628,6 +3628,25 @@ static int msmfb_handle_pp_ioctl(struct msm_fb_data_type *mfd,
 	return ret;
 }
 
+static int msmfb_handle_metadata_ioctl(struct msm_fb_data_type *mfd,
+				struct msmfb_metadata *metadata_ptr)
+{
+	int ret;
+	switch (metadata_ptr->op) {
+#ifdef CONFIG_FB_MSM_MDP40
+	case metadata_op_base_blend:
+		ret = mdp4_update_base_blend(mfd,
+						&metadata_ptr->data.blend_cfg);
+		break;
+#endif
+	default:
+		pr_warn("Unsupported request to MDP META IOCTL.\n");
+		ret = -EINVAL;
+		break;
+	}
+	return ret;
+}
+
 static int msm_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			unsigned long arg)
 {
@@ -3648,6 +3667,7 @@ static int msm_fb_ioctl(struct fb_info *info, unsigned int cmd,
 #endif
 	struct mdp_page_protection fb_page_protection;
 	struct msmfb_mdp_pp mdp_pp;
+    struct msmfb_metadata mdp_metadata;
 	int ret = 0;
 
 	switch (cmd) {
@@ -3989,6 +4009,13 @@ static int msm_fb_ioctl(struct fb_info *info, unsigned int cmd,
         }
         break;
 #endif
+	case MSMFB_METADATA_SET:
+		ret = copy_from_user(&mdp_metadata, argp, sizeof(mdp_metadata));
+		if (ret)
+			return ret;
+		ret = msmfb_handle_metadata_ioctl(mfd, &mdp_metadata);
+		break;
+
 	default:
 		MSM_FB_INFO("MDP: unknown ioctl (cmd=%x) received!\n", cmd);
 		ret = -EINVAL;
@@ -4193,7 +4220,7 @@ EXPORT_SYMBOL(get_fb_phys_info);
 #ifdef CONFIG_HUAWEI_EVALUATE_POWER_CONSUMPTION 
 static void __exit msm_fb_exit(void)
 {
-/* ɾ���˶δ��� */
+/* É¾³ý´Ë¶Î´úÂë */
 
      /*lcd consume notify timer cancel*/
 	 del_timer(&bright_timer);
@@ -4229,7 +4256,7 @@ int __init msm_fb_init(void)
 	INIT_WORK(&light_notify_work, light_notify_work_func);  
 #endif
 
-/* ɾ���˶δ��� */
+/* É¾³ý´Ë¶Î´úÂë */
 
 	return 0;
 }
