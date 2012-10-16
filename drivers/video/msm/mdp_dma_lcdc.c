@@ -403,8 +403,6 @@ void mdp_dma_lcdc_vsync_ctrl(int enable)
 	/* delete two lines */
 
 	vsync_cntrl.vsync_irq_enabled = enable;
-	if (!enable)
-		vsync_cntrl.disabled_clocks = 0;
 	disabled_clocks = vsync_cntrl.disabled_clocks;
 	spin_unlock_irqrestore(&mdp_spin_lock, flag);
 
