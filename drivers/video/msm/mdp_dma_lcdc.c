@@ -347,6 +347,9 @@ int mdp_lcdc_on(struct platform_device *pdev)
 	}
 #endif
 /* delete some line */
+
+    mdp_histogram_ctrl_all(TRUE);
+
 	return ret;
 }
 
