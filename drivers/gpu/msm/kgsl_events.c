@@ -85,6 +85,10 @@ int kgsl_add_event(struct kgsl_device *device, u32 id, u32 ts,
 	event->func = cb;
 	event->owner = owner;
 
+	/* inc refcount to avoid race conditions in cleanup */
+	if (context)
+		kgsl_context_get(context);
+
 	/* Add the event to either the owning context or the global list */
 
 	if (context) {
@@ -136,6 +140,7 @@ void kgsl_cancel_events_ctxt(struct kgsl_device *device,
 		if (event->func)
 			event->func(device, event->priv, id, cur);
 
+		kgsl_context_put(context);
 		list_del(&event->list);
 		kfree(event);
 	}
@@ -174,6 +179,9 @@ void kgsl_cancel_events(struct kgsl_device *device,
 			event->func(device, event->priv, KGSL_MEMSTORE_GLOBAL,
 				cur);
 
+		if (event->context)
+			kgsl_context_put(event->context);
+
 		list_del(&event->list);
 		kfree(event);
 	}
@@ -201,6 +209,9 @@ static void _process_event_list(struct kgsl_device *device,
 
 		if (event->func)
 			event->func(device, event->priv, id, event->timestamp);
+
+		if (event->context)
+			kgsl_context_put(event->context);
 
 		list_del(&event->list);
 		kfree(event);
