@@ -546,7 +546,9 @@ static void rpcrouter_register_board_dev(struct rr_server *server)
 #ifdef CONFIG_HUAWEI_KERNEL
 			spin_unlock_irqrestore(&rpc_board_dev_list_lock, flags);
 #endif
+            preempt_disable();
 			rc = platform_device_register(&board_info->dev->pdev);
+            preempt_enable();
 			/* fix the BUG "BUG: scheduling while atomic:" */
 #ifdef CONFIG_HUAWEI_KERNEL
 			spin_lock_irqsave(&rpc_board_dev_list_lock, flags);
