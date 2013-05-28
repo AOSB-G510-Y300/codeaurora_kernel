@@ -535,6 +535,43 @@ TRACE_EVENT(kgsl_mmu_pagefault,
 	)
 );
 
+TRACE_EVENT(kgsl_register_event,
+		TP_PROTO(unsigned int id, unsigned int timestamp),
+		TP_ARGS(id, timestamp),
+		TP_STRUCT__entry(
+			__field(unsigned int, id)
+			__field(unsigned int, timestamp)
+		),
+		TP_fast_assign(
+			__entry->id = id;
+			__entry->timestamp = timestamp;
+		),
+		TP_printk(
+			"ctx=%d ts=%d",
+			__entry->id, __entry->timestamp)
+);
+
+TRACE_EVENT(kgsl_fire_event,
+		TP_PROTO(unsigned int id, unsigned int ts,
+			unsigned int type, unsigned int age),
+		TP_ARGS(id, ts, type, age),
+		TP_STRUCT__entry(
+			__field(unsigned int, id)
+			__field(unsigned int, ts)
+			__field(unsigned int, type)
+			__field(unsigned int, age)
+		),
+		TP_fast_assign(
+			__entry->id = id;
+			__entry->ts = ts;
+			__entry->type = type;
+			__entry->age = age;
+		),
+		TP_printk(
+			"ctx=%d ts=%d type=%d age=%u",
+			__entry->id, __entry->ts, __entry->type, __entry->age)
+);
+
 TRACE_EVENT(kgsl_regwrite,
 
 	TP_PROTO(struct kgsl_device *device, unsigned int offset,
