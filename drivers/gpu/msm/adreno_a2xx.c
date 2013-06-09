@@ -1,4 +1,4 @@
-/* Copyright (c) 2002,2007-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2002,2007-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1989,7 +1989,6 @@ static void a2xx_start(struct adreno_device *adreno_dev)
 			0x18000000);
 	}
 
-    /* Qualcomm patch kgsl: Increase REG_RBBM_CNTL value to 0xFFFF for A20x */
 	if (adreno_is_a20x(adreno_dev))
 		/* For A20X based targets increase number of clocks
 		 * that RBBM will wait before de-asserting Register
