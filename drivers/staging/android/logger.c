@@ -538,7 +538,7 @@ ssize_t logger_aio_write(struct kiocb *iocb, const struct iovec *iov,
 	struct logger_entry header;
 	struct timespec now;
 	ssize_t ret = 0;
-    
+
 #ifdef CONFIG_HUAWEI_KERNEL
     char priority = 0;
     char tag[MAX_TAG_LEN] = {0};
@@ -670,13 +670,11 @@ static int logger_release(struct inode *ignored, struct file *file)
 {
 	if (file->f_mode & FMODE_READ) {
 		struct logger_reader *reader = file->private_data;
-        
-        /* logger driver NULL pointer due to mutual exclusion */
-        struct logger_log *log = reader->log;
-	       
-        mutex_lock(&log->mutex);
+		struct logger_log *log = reader->log;
+
+		mutex_lock(&log->mutex);
 		list_del(&reader->list);
-        mutex_unlock(&log->mutex);
+		mutex_unlock(&log->mutex);
 
 		kfree(reader);
 	}
