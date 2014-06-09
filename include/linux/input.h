@@ -467,6 +467,7 @@ struct input_keymap_entry {
 
 #define KEY_WIMAX		246
 #define KEY_RFKILL		247	/* Key that controls all radios */
+#define KEY_GENIUSBUTTON        248  /* specially for a certain APK */
 
 #define KEY_MICMUTE		248	/* Mute / unmute the microphone */
 
@@ -849,6 +850,7 @@ struct input_keymap_entry {
 #define SW_HPHL_OVERCURRENT    0x0e  /* set = over current on left hph */
 #define SW_HPHR_OVERCURRENT    0x0f  /* set = over current on right hph */
 #define SW_UNSUPPORT_INSERT	0x10  /* set = unsupported device inserted */
+#define SW_MUTE         0x0e  /* set = mute the device */
 #define SW_MAX			0x20
 #define SW_CNT			(SW_MAX+1)
 
@@ -864,6 +866,10 @@ struct input_keymap_entry {
 #define MSC_MAX			0x07
 #define MSC_CNT			(MSC_MAX+1)
 
+/* modify for ES-version*/
+#define ABS_LIGHT            0x2e
+
+#define BTN_TOUCH2         0x102
 /*
  * LEDs
  */

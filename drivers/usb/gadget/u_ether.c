@@ -89,7 +89,12 @@ struct eth_dev {
 
 #define RX_EXTRA	20	/* bytes guarding against rx overflows */
 
+/* increase the rndis tx list buffer for reducing the wait time of net queue  */
+#ifdef CONFIG_HUAWEI_KERNEL
+#define DEFAULT_QLEN	8
+#else
 #define DEFAULT_QLEN	2	/* double buffering by default */
+#endif
 
 #ifdef CONFIG_USB_GADGET_DUALSPEED
 
@@ -476,25 +481,12 @@ static void eth_work(struct work_struct *work)
 static void tx_complete(struct usb_ep *ep, struct usb_request *req)
 {
 	struct sk_buff	*skb = req->context;
-	struct eth_dev	*dev;
-	struct net_device *net;
+	struct eth_dev	*dev = ep->driver_data;
+	struct net_device *net = dev->net;
 	struct usb_request *new_req;
 	struct usb_ep *in;
 	int length;
 	int retval;
-
-	if (!ep->driver_data) {
-		usb_ep_free_request(ep, req);
-		return;
-	}
-
-	dev = ep->driver_data;
-	net = dev->net;
-
-	if (!dev->port_usb) {
-		usb_ep_free_request(ep, req);
-		return;
-	}
 
 	switch (req->status) {
 	default:

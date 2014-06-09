@@ -1,4 +1,4 @@
-/* Copyright (c) 2009-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -256,7 +256,6 @@ static enum msm_cpu cpu_of_id[] = {
 	[128] = MSM_CPU_8625,
 	[129] = MSM_CPU_8625,
 	[137] = MSM_CPU_8625,
-	[167] = MSM_CPU_8625,
 
 	/* 8064 MPQ ID */
 	[130] = MSM_CPU_8064,

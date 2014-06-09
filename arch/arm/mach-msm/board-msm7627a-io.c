@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -31,6 +31,21 @@
 #include "devices.h"
 #include "board-msm7627a.h"
 #include "devices-msm7x2xa.h"
+
+/* update Qualcomm 1020 baseline houming modified
+  */
+#include <mach/rpc_pmapp.h>
+//add keypad driver
+#include "msm-keypad-devices.h"
+#include <linux/hardware_self_adapt.h>
+#include <linux/touch_platform_config.h>
+#ifdef CONFIG_HUAWEI_NFC_PN544
+#include <linux/nfc/pn544.h>
+#endif
+
+#define MSM_7x27A_TOUCH_RESET_PIN 96 //13
+#define MSM_7X27A_TOUCH_INT_PIN 82
+atomic_t touch_detected_yet = ATOMIC_INIT(0);
 
 #define ATMEL_TS_I2C_NAME "maXTouch"
 #define ATMEL_X_OFFSET 13
@@ -86,6 +101,7 @@ static const unsigned short keymap[ARRAY_SIZE(kp_col_gpios) *
 };
 
 /* SURF keypad platform device information */
+#ifndef CONFIG_HUAWEI_GPIO_KEYPAD  /*added by lishubin update to 1215*/
 static struct gpio_event_matrix_info kp_matrix_info = {
 	.info.func	= gpio_event_matrix_func,
 	.keymap		= keymap,
@@ -116,6 +132,7 @@ static struct platform_device kp_pdev = {
 		.platform_data	= &kp_pdata,
 	},
 };
+#endif /*added by lishubin update to 1215*/
 
 /* 8625 keypad device information */
 static unsigned int kp_row_gpios_8625[] = {31};
@@ -165,7 +182,6 @@ static struct platform_device kp_pdev_8625 = {
 #define LED_GPIO_PDM 96
 
 #define MXT_TS_IRQ_GPIO         48
-#define MXT_SKU6_TS_IRQ_GPIO	11
 #define MXT_TS_RESET_GPIO       26
 #define MAX_VKEY_LEN		100
 
@@ -344,6 +360,586 @@ static struct mxt_platform_data mxt_platform_data = {
 	.key_codes		= mxt_key_codes,
 };
 
+/* update Qualcomm 1020 baseline houming modified
+  */
+/* -------------------- huawei touch -------------------- */
+#define IC_PM_ON   1
+#define IC_PM_OFF  0
+
+static int power_switch(int pm)
+{
+#if 0
+	int rc = 0;
+	
+	if (IC_PM_ON == pm)
+	{
+		
+		vreg_l12 = vreg_get(NULL,"gp2");
+		if (IS_ERR(vreg_l12)) 
+		{
+			pr_err("%s:l12 power init get failed\n", __func__);
+			goto err_power_fail;
+		}
+		
+		rc = vreg_set_level(vreg_l12, 2850);
+		if(rc)
+		{
+			pr_err("%s:l12 power init faild\n",__func__);
+			goto err_power_fail;
+		}
+
+		
+		rc = vreg_enable(vreg_l12);
+		if (rc) 
+		{
+			pr_err("%s:l12 power init failed \n", __func__);
+		}
+
+		mdelay(50);     
+
+	}
+	else if(IC_PM_OFF == pm)
+	{
+		if(NULL != vreg_l12)
+		{
+			rc = vreg_disable(vreg_l12);
+			if (rc)
+			{
+				pr_err("%s:l12 power disable failed \n", __func__);
+			}
+		}
+	}
+	else 
+	{
+		rc = -EPERM;
+		pr_err("%s:l12 power switch not support yet!\n", __func__);	
+	}
+err_power_fail:
+	return rc;
+#endif
+	return 0;
+}
+
+/* modify function name and gpio config */
+/*Multipe use gpio_request function has been mistakes */
+
+/* use gpio free to release */
+static int set_touch_interrupt_gpio(void)
+{
+	int gpio_config = 0;
+	int ret = 0;
+
+	ret = gpio_request(MSM_7X27A_TOUCH_INT_PIN, "TOUCH_INT");
+	if (ret)
+	{
+		pr_err("%s:touch int gpio %d request failed\n", __func__, MSM_7X27A_TOUCH_INT_PIN);
+		return ret;
+	}
+
+	gpio_config = GPIO_CFG(MSM_7X27A_TOUCH_INT_PIN,0, GPIO_CFG_INPUT, GPIO_CFG_PULL_UP,GPIO_CFG_2MA);
+	ret = gpio_tlmm_config(gpio_config, GPIO_CFG_ENABLE);
+	if (ret)
+	{
+		pr_err("%s:touch int gpio %d config failed\n", __func__, MSM_7X27A_TOUCH_INT_PIN);
+		gpio_free(MSM_7X27A_TOUCH_INT_PIN);
+		return ret;
+	}
+	
+	ret = gpio_direction_input(MSM_7X27A_TOUCH_INT_PIN);
+	if (ret)
+	{
+		pr_err("%s:touch int gpio %d input failed\n", __func__, MSM_7X27A_TOUCH_INT_PIN);
+		gpio_free(MSM_7X27A_TOUCH_INT_PIN);
+		return ret;
+	}
+
+	gpio_free(MSM_7X27A_TOUCH_INT_PIN);
+	return ret;
+}
+/*we use this to detect the probe is detected*/
+static void set_touch_probe_flag(int detected)
+{
+	if(detected > 0)
+	{
+		atomic_set(&touch_detected_yet, 1);
+	}
+	else
+	{
+		atomic_set(&touch_detected_yet, 0);
+	}
+	
+	return;
+}
+static int read_touch_probe_flag(void)
+{	
+	return atomic_read(&touch_detected_yet);
+}
+
+/*this function reset touch panel */
+/*Multipe use gpio_request function has been mistakes */
+
+/* use gpio free to release */
+static int touch_reset(void)
+{
+	int ret = 0;
+	int gpio_config = 0;
+
+	ret = gpio_request(MSM_7x27A_TOUCH_RESET_PIN, "TOUCH_RESET");
+	if (ret)
+	{
+		pr_err("%s:touch reset gpio %d request failed\n", __func__, MSM_7x27A_TOUCH_RESET_PIN);
+		return ret;
+	}
+
+	gpio_config = GPIO_CFG(MSM_7x27A_TOUCH_RESET_PIN,0, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_UP,GPIO_CFG_2MA);
+	ret = gpio_tlmm_config(gpio_config, GPIO_CFG_ENABLE);
+	if (ret)
+	{
+		pr_err("%s:touch reset gpio %d config failed\n", __func__, MSM_7x27A_TOUCH_RESET_PIN);
+		gpio_free(MSM_7x27A_TOUCH_RESET_PIN);
+		return ret;
+	}
+	
+	ret = gpio_direction_output(MSM_7x27A_TOUCH_RESET_PIN, 1);
+	if (ret)
+	{
+		pr_err("%s:touch reset gpio %d output failed\n", __func__, MSM_7x27A_TOUCH_RESET_PIN);
+		gpio_free(MSM_7x27A_TOUCH_RESET_PIN);
+		return ret;
+	}
+	mdelay(5);
+	ret = gpio_direction_output(MSM_7x27A_TOUCH_RESET_PIN, 0);
+	if (ret)
+	{
+		pr_err("%s:touch reset gpio %d output failed\n", __func__, MSM_7x27A_TOUCH_RESET_PIN);
+		gpio_free(MSM_7x27A_TOUCH_RESET_PIN);
+		return ret;
+	}
+	mdelay(10);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
+	ret = gpio_direction_output(MSM_7x27A_TOUCH_RESET_PIN, 1);
+	if (ret)
+	{
+		pr_err("%s:touch reset gpio %d output failed\n", __func__, MSM_7x27A_TOUCH_RESET_PIN);
+		gpio_free(MSM_7x27A_TOUCH_RESET_PIN);
+		return ret;
+	}
+	msleep(50);//must more than 10ms.
+
+	gpio_free(MSM_7x27A_TOUCH_RESET_PIN);
+	return ret;
+}
+/*this function return reset gpio at 7x30 platform */
+static int get_touch_reset_gpio(void)
+{
+	return MSM_7x27A_TOUCH_RESET_PIN;
+}
+
+/*this function get the tp  resolution*/
+static int get_touch_resolution(struct tp_resolution_conversion *tp_resolution_type)
+{	
+	if (machine_is_msm7x27a_U8815()
+        || machine_is_msm7x27a_C8820()
+		|| machine_is_msm8x25_C8825D()
+		|| machine_is_msm8x25_U8825D()
+		|| machine_is_msm8x25_U8825()
+		|| machine_is_msm8x25_C8833D()
+		|| machine_is_msm8x25_U8833D()
+		|| machine_is_msm8x25_U8833()        
+		|| machine_is_msm8x25_H881C()
+		|| machine_is_msm8x25_C8812P()
+		|| machine_is_msm8x25_Y301_A1()
+		|| machine_is_msm8x25_Y300_J1())
+	{
+		tp_resolution_type->lcd_x = LCD_X_WVGA;
+		tp_resolution_type->lcd_y = LCD_Y_WVGA;   
+		tp_resolution_type->lcd_all = LCD_ALL_WVGA_4INCHTP;
+	}
+    else if (machine_is_msm7x27a_U8655_EMMC()
+          || machine_is_msm7x27a_H867G()
+          || machine_is_msm7x27a_H868C()
+          )
+	{
+		tp_resolution_type->lcd_x = LCD_X_HVGA;
+		tp_resolution_type->lcd_y = LCD_Y_HVGA;   
+		tp_resolution_type->lcd_all = LCD_ALL_HVGA_35INCHTP;
+	}
+	else if(machine_is_msm8x25_C8950D()
+		|| machine_is_msm8x25_U8950D()
+		|| machine_is_msm8x25_U8950())
+	{
+	    tp_resolution_type->lcd_x = LCD_X_QHD;
+		tp_resolution_type->lcd_y = LCD_Y_QHD;   
+		tp_resolution_type->lcd_all = LCD_ALL_QHD_45INCHTP;
+	}
+	else if(machine_is_msm8x25_U8951D()
+			|| machine_is_msm8x25_U8951()
+            || machine_is_msm8x25_C8813())
+	{
+	    tp_resolution_type->lcd_x = LCD_X_FWVGA;
+		tp_resolution_type->lcd_y = LCD_Y_FWVGA;   
+		tp_resolution_type->lcd_all = LCD_ALL_FWVGA_45INCHTP;
+	}
+	else
+	{
+	    tp_resolution_type->lcd_x = LCD_X_WVGA;
+		tp_resolution_type->lcd_y = LCD_Y_WVGA;   
+		tp_resolution_type->lcd_all = LCD_ALL_WVGA_4INCHTP;
+	}
+	return 1;
+}
+
+/*If product has independent button ,return 1*/
+static buttonflag read_button_flag(void)
+{
+	if(machine_is_msm8x25_Y301_A1())
+	{
+		return TOUCH_INDEPENDENT_BUTTON;
+	}
+	else if(machine_is_msm8x25_Y300_J1())
+	{
+		return TOUCH_NO_BUTTON;
+	}
+	else 
+	{
+		return TOUCH_VIRTUAL_KEY;
+	}
+}
+
+/*If product has independent button ,init the button map*/
+static int get_touch_button_map(struct tp_button_map *tp_button_map)
+{	
+	int button_num = 0;
+	int button_map[MAX_BUTTON_NUM] = {0};
+	int i = 0;
+	
+	if(machine_is_msm8x25_Y301_A1())
+	{
+		button_map[0] = KEY_BACK;
+		button_map[1] = KEY_HOME;
+		button_map[2] = KEY_MENU;
+		button_num = 3;
+	}
+	else 
+	{
+		return 0 ;
+	}
+	
+	tp_button_map->button_num = button_num;
+	for(i=0;i<button_num;i++)
+	{
+		tp_button_map->button_map[i] = button_map[i];
+	}
+	return 1;
+}
+
+static struct touch_hw_platform_data touch_hw_data = 
+{
+	.touch_power = power_switch,
+	.set_touch_interrupt_gpio = set_touch_interrupt_gpio,
+	.set_touch_probe_flag = set_touch_probe_flag,
+	.read_touch_probe_flag = read_touch_probe_flag,
+	.touch_reset = touch_reset,
+	.get_touch_reset_gpio = get_touch_reset_gpio,
+	.get_touch_resolution = get_touch_resolution,
+	.read_button_flag = read_button_flag,
+	.get_touch_button_map = get_touch_button_map,
+};
+
+/* -------------------- huawei sensors -------------------- */
+static int gs_init_flag = 0;   /*gsensor is not initialized*/
+#ifdef CONFIG_HUAWEI_FEATURE_SENSORS_ACCELEROMETER_ADI_ADXL346
+static int gsensor_support_dummyaddr_adi346(void)
+{
+    int ret = -1;	/*default value means actual address*/
+
+    ret = (int)GS_ADI346;
+
+    return ret;
+}
+
+static struct gs_platform_data gs_adi346_platform_data = {
+    .adapt_fn = gsensor_support_dummyaddr_adi346,
+    .slave_addr = (0xA6 >> 1),  /*i2c slave address*/
+    .dev_id = 0x00,    /*WHO AM I*/
+    .init_flag = &gs_init_flag,
+    .get_compass_gs_position=get_compass_gs_position,
+};
+#endif
+
+#ifdef CONFIG_HUAWEI_FEATURE_SENSORS_ACCELEROMETER_KXTIK1004
+static int gsensor_support_dummyaddr_kxtik(void)
+{
+    int ret = -1;	/*default value means actual address*/
+    ret = (int)GS_KXTIK1004;
+    return ret;
+}
+
+static struct gs_platform_data gs_kxtik_platform_data = {
+    .adapt_fn = gsensor_support_dummyaddr_kxtik,
+    .slave_addr = (0x1E >> 1),  /*i2c slave address*/
+    .dev_id = 0x05,    /*WHO AM I*/
+    .init_flag = &gs_init_flag,
+    .get_compass_gs_position=get_compass_gs_position,
+};
+#endif
+
+#ifdef CONFIG_HUAWEI_FEATURE_SENSORS_ACCELEROMETER_MMA8452
+static struct gs_platform_data gs_mma8452_platform_data = {
+    .adapt_fn = NULL,
+    .slave_addr = (0x38 >> 1),  /*i2c slave address*/
+    .dev_id = 0x2A,    /*WHO AM I*/
+    .init_flag = &gs_init_flag,
+    .get_compass_gs_position=get_compass_gs_position,
+};
+#endif
+
+#ifdef CONFIG_HUAWEI_FEATURE_SENSORS_ACCELEROMETER_ST_LIS3XH
+static struct gs_platform_data gs_st_lis3xh_platform_data = {
+    .adapt_fn = NULL,
+    .slave_addr = (0x30 >> 1),  /*i2c slave address*/
+    .dev_id = 0x00,    /*WHO AM I*/
+    .init_flag = &gs_init_flag,
+    .get_compass_gs_position=get_compass_gs_position,
+};
+#endif
+
+#ifdef CONFIG_HUAWEI_FEATURE_PROXIMITY_EVERLIGHT_APS_9900
+static int aps9900_gpio_config_interrupt(void)
+{
+    int gpio_config = 0;
+    int ret = 0;
+  
+    gpio_config = GPIO_CFG(MSM_7X27A_APS9900_INT, 0, GPIO_CFG_INPUT,GPIO_CFG_PULL_UP, GPIO_CFG_2MA);
+    ret = gpio_tlmm_config(gpio_config, GPIO_CFG_ENABLE);
+    return ret; 
+}
+
+static struct aps9900_hw_platform_data aps9900_hw_data = {
+    .aps9900_gpio_config_interrupt = aps9900_gpio_config_interrupt,
+};
+#endif
+
+/* -------------------- huawei nfc -------------------- */
+#ifdef CONFIG_HUAWEI_NFC_PN544
+/* this function is used to reset pn544 by controlling the ven pin */
+static int pn544_ven_reset(void)
+{
+	int ret=0;
+	int gpio_config=0;
+	
+	gpio_config = GPIO_CFG(GPIO_NFC_VEN, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_2MA);
+	ret = gpio_tlmm_config(gpio_config, GPIO_CFG_ENABLE);
+	ret = gpio_request(GPIO_NFC_VEN, "gpio 113 for NFC pn544");
+	ret = gpio_direction_output(GPIO_NFC_VEN,0);
+	/* pull up first, then pull down for 10 ms, and enable last */
+	gpio_set_value(GPIO_NFC_VEN, 1);
+	mdelay(5);
+	gpio_set_value(GPIO_NFC_VEN, 0);
+
+	mdelay(10);
+	gpio_set_value(GPIO_NFC_VEN, 1);
+	mdelay(5);
+	return 0;
+}
+
+static int pn544_interrupt_gpio_config(void)
+{
+	int ret=0;
+	int gpio_config=0;
+	gpio_config = GPIO_CFG(GPIO_NFC_INT, 0, GPIO_CFG_INPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA);
+	ret = gpio_tlmm_config(gpio_config, GPIO_CFG_ENABLE);
+	ret = gpio_request(GPIO_NFC_INT, "gpio 114 for NFC pn544");
+	ret = gpio_direction_input(GPIO_NFC_INT);
+	return 0;
+}
+
+static int pn544_fw_download_pull_down(void)
+{
+	gpio_set_value(GPIO_NFC_LOAD, 1);
+	mdelay(5);
+	gpio_set_value(GPIO_NFC_LOAD, 0);
+	mdelay(5);
+	return 0;	
+}
+
+static int pn544_fw_download_pull_high(void)
+{
+	gpio_set_value(GPIO_NFC_LOAD, 0);
+	mdelay(5);
+	gpio_set_value(GPIO_NFC_LOAD, 1);
+	mdelay(5);
+	return 0;
+}
+
+static int pn544_clock_output_ctrl(int vote)
+{
+       const char * id = "nfcp";
+	pmapp_clock_vote(id, PMAPP_CLOCK_ID_D1,
+		vote?PMAPP_CLOCK_VOTE_ON:PMAPP_CLOCK_VOTE_OFF);
+	return 0;
+}
+
+// expand func function: add close PMU output function
+// mode = 0 : close for clock pmu request mode,  mode = 1 : Set for clock pmu request mode
+static int pn544_clock_output_mode_ctrl(int mode)
+{
+       const char * id = "nfcp";
+	pmapp_clock_vote(id, PMAPP_CLOCK_ID_D1, 
+		mode?PMAPP_CLOCK_VOTE_PIN_CTRL:PMAPP_CLOCK_VOTE_OFF);
+	return 0;
+}
+
+static struct pn544_nfc_platform_data pn544_hw_data = 
+{
+	.pn544_ven_reset = pn544_ven_reset,
+	.pn544_interrupt_gpio_config = pn544_interrupt_gpio_config,
+	.pn544_fw_download_pull_down = pn544_fw_download_pull_down,
+	.pn544_fw_download_pull_high = pn544_fw_download_pull_high,
+	.pn544_clock_output_ctrl = pn544_clock_output_ctrl,
+	.pn544_clock_output_mode_ctrl = pn544_clock_output_mode_ctrl,
+};
+
+#endif
+
+static struct i2c_board_info huawei_i2c_board_info[] __initdata = 
+{
+/* -------------------- huawei touch -------------------- */
+#ifdef CONFIG_HUAWEI_MELFAS_TOUCHSCREEN
+	{
+		I2C_BOARD_INFO("melfas-ts", 0x23),
+		.platform_data = &touch_hw_data,
+		.irq = MSM_GPIO_TO_INT(MSM_7X27A_TOUCH_INT_PIN),
+        .flags = true,   /*support multi point*/
+	},
+#endif
+
+#ifdef CONFIG_HUAWEI_FEATURE_RMI_TOUCH
+	{
+		I2C_BOARD_INFO("Synaptics_rmi", 0x70),
+		.platform_data = &touch_hw_data,
+		.irq = MSM_GPIO_TO_INT(MSM_7X27A_TOUCH_INT_PIN),
+        .flags = true,
+	},
+	/* synaptics IC s2000 for U8661
+	 * I2C ADDR	: 0x24
+	 */
+	{
+		I2C_BOARD_INFO("Synaptics_rmi", 0x24),
+		.platform_data = &touch_hw_data,
+		.irq = MSM_GPIO_TO_INT(MSM_7X27A_TOUCH_INT_PIN),
+        .flags = true,
+	},
+	/* only use i2c addr is 0x20 in board*/
+	{
+		I2C_BOARD_INFO("Synaptics_rmi", 0x20),
+		.platform_data = &touch_hw_data,
+		.irq = MSM_GPIO_TO_INT(MSM_7X27A_TOUCH_INT_PIN),
+        .flags = true,
+	},
+#endif
+
+#ifdef CONFIG_HUAWEI_GT968_TOUCHSCREEN
+    {
+        I2C_BOARD_INFO("Goodix-TS", 0x5d),
+		.platform_data = &touch_hw_data,
+		.irq = MSM_GPIO_TO_INT(MSM_7X27A_TOUCH_INT_PIN),
+        .flags = true,
+    },
+#endif
+
+/* -------------------- huawei keypad -------------------- */
+#ifdef CONFIG_QWERTY_KEYPAD_ADP5587
+	{
+		I2C_BOARD_INFO("adp5587", 0x34),
+		.irq = MSM_GPIO_TO_INT(40)
+	},
+#endif 
+
+/* -------------------- huawei sensors -------------------- */
+#ifdef CONFIG_HUAWEI_FEATURE_SENSORS_ACCELEROMETER_ADI_ADXL346
+    {
+        I2C_BOARD_INFO("gs_adi346", 0xA8>>1),  /* actual address 0xA6, fake address 0xA8*/
+	     .platform_data = &gs_adi346_platform_data,
+        .irq = MSM_GPIO_TO_INT(19)    //MEMS_INT1
+    },
+#endif 
+#ifdef CONFIG_HUAWEI_FEATURE_SENSORS_ACCELEROMETER_KXTIK1004
+	{ 
+	    I2C_BOARD_INFO("gs_kxtik", 0x1E >> 1),  /* actual address 0x0F*/
+	    .platform_data = &gs_kxtik_platform_data,
+	    .irq = MSM_GPIO_TO_INT(19)     //MEMS_INT1
+	},
+#endif
+
+#ifdef CONFIG_HUAWEI_FEATURE_SENSORS_ACCELEROMETER_MMA8452
+    {
+        I2C_BOARD_INFO("gs_mma8452", 0x38 >> 1),
+        .platform_data = &gs_mma8452_platform_data,
+        .irq = MSM_GPIO_TO_INT(19)    //MEMS_INT1
+    },
+#endif	
+
+#ifdef CONFIG_HUAWEI_FEATURE_SENSORS_ACCELEROMETER_ST_LIS3XH
+    {
+        I2C_BOARD_INFO("gs_st_lis3xh", 0x30 >> 1),
+	 .platform_data = &gs_st_lis3xh_platform_data,
+        .irq = MSM_GPIO_TO_INT(19)    //MEMS_INT1
+    },
+#endif
+
+/*fack address,because IIC is interrupt with bluetooth*/
+#ifdef CONFIG_HUAWEI_FEATURE_SENSORS_AK8975
+    {
+        I2C_BOARD_INFO("akm8975", 0x0D),//7 bit addr, no write bit
+        .irq = MSM_GPIO_TO_INT(18)
+    },
+#endif 
+
+#ifdef CONFIG_HUAWEI_FEATURE_SENSORS_AK8963
+    {
+        I2C_BOARD_INFO("akm8963", 0x0E),//7 bit addr, no write bit
+        .irq = MSM_GPIO_TO_INT(18)
+    },
+#endif 
+
+#ifdef CONFIG_HUAWEI_FEATURE_PROXIMITY_EVERLIGHT_APS_12D
+	{   
+		I2C_BOARD_INFO("aps-12d", 0x88 >> 1),  
+	},
+#endif
+
+#ifdef CONFIG_HUAWEI_FEATURE_PROXIMITY_EVERLIGHT_APS_9900
+	{   
+		I2C_BOARD_INFO("aps-9900", 0x39),
+	    .irq = MSM_GPIO_TO_INT(MSM_7X27A_APS9900_INT),
+        .platform_data = &aps9900_hw_data,
+	},
+#endif
+
+/* -------------------- huawei camera flash -------------------- */
+/*Register i2c information for flash tps61310*/
+#ifdef CONFIG_HUAWEI_FEATURE_TPS61310
+	{
+		I2C_BOARD_INFO("tps61310" , 0x33),
+	},
+#endif
+
+/*Add new i2c information for flash lm3642*/
+#ifdef CONFIG_HUAWEI_FEATURE_LM3642
+	{
+		I2C_BOARD_INFO("lm3642" , 0x63),
+	},
+#endif
+/* -------------------- huawei nfc -------------------- */
+#ifdef CONFIG_HUAWEI_NFC_PN544
+	{
+		I2C_BOARD_INFO(PN544_DRIVER_NAME, PN544_I2C_ADDR),
+		.irq = MSM_GPIO_TO_INT(GPIO_NFC_INT),
+		.platform_data = &pn544_hw_data,
+	},
+#endif
+};
+
 static struct i2c_board_info mxt_device_info[] __initdata = {
 	{
 		I2C_BOARD_INFO("atmel_mxt_ts", 0x4a),
@@ -470,6 +1066,7 @@ static int synaptics_touchpad_setup(void)
 }
 #endif
 
+#ifndef CONFIG_HUAWEI_KERNEL /*added by lishubin update to 1215*/
 static struct regulator_bulk_data regs_atmel[] = {
 	{ .supply = "ldo12", .min_uV = 2700000, .max_uV = 3300000 },
 	{ .supply = "smps3", .min_uV = 1800000, .max_uV = 1800000 },
@@ -591,6 +1188,7 @@ static struct i2c_board_info atmel_ts_i2c_info[] __initdata = {
 		.irq = MSM_GPIO_TO_INT(ATMEL_TS_GPIO_IRQ),
 	},
 };
+#endif /*added by lishubin update to 1215*/
 
 static struct msm_handset_platform_data hs_platform_data = {
 	.hs_name = "7k_handset",
@@ -775,6 +1373,7 @@ static struct platform_device tricolor_leds_pdev = {
 void __init msm7627a_add_io_devices(void)
 {
 	/* touchscreen */
+#ifndef CONFIG_HUAWEI_KERNEL
 	if (machine_is_msm7625a_surf() || machine_is_msm7625a_ffa()) {
 		atmel_ts_pdata.min_x = 0;
 		atmel_ts_pdata.max_x = 480;
@@ -785,9 +1384,21 @@ void __init msm7627a_add_io_devices(void)
 	i2c_register_board_info(MSM_GSBI1_QUP_I2C_BUS_ID,
 				atmel_ts_i2c_info,
 				ARRAY_SIZE(atmel_ts_i2c_info));
+#else
+	i2c_register_board_info(MSM_GSBI1_QUP_I2C_BUS_ID, 
+		huawei_i2c_board_info,
+		ARRAY_SIZE(huawei_i2c_board_info));
+#endif
+
+#ifndef CONFIG_HUAWEI_GPIO_KEYPAD
 	/* keypad */
 	platform_device_register(&kp_pdev);
-
+#else
+	if(machine_is_msm8x25_Y300_J1())
+		platform_device_register(&keypad_device_y300j1);
+	else
+		platform_device_register(&keypad_device_default);
+#endif
 	/* headset */
 	platform_device_register(&hs_pdev);
 
@@ -801,8 +1412,10 @@ void __init msm7627a_add_io_devices(void)
 		platform_device_register(&led_pdev);
 
 	/* Vibrator */
+#ifndef CONFIG_HUAWEI_KERNEL
 	if (machine_is_msm7x27a_ffa() || machine_is_msm7625a_ffa()
 					|| machine_is_msm8625_ffa())
+#endif
 		msm_init_pmic_vibrator();
 }
 
@@ -816,9 +1429,9 @@ void __init qrd7627a_add_io_devices(void)
 					synaptic_i2c_clearpad3k,
 					ARRAY_SIZE(synaptic_i2c_clearpad3k));
 	} else if (machine_is_msm7627a_evb() || machine_is_msm8625_evb() ||
-		machine_is_msm7627a_evt() || machine_is_msm8625_evt()) {
+			machine_is_msm8625_evt()) {
 		/* Use configuration data for EVT */
-		if (machine_is_msm8625_evt() || machine_is_msm7627a_evt()) {
+		if (machine_is_msm8625_evt()) {
 			mxt_config_array[0].config = mxt_config_data_evt;
 			mxt_config_array[0].config_length =
 					ARRAY_SIZE(mxt_config_data_evt);
@@ -827,19 +1440,12 @@ void __init qrd7627a_add_io_devices(void)
 			mxt_vkey_setup();
 		}
 
-		/* set irq gpio for sku6 TSTS device */
-		if (machine_is_msm7627a_evt()) {
-			mxt_platform_data.irq_gpio = MXT_SKU6_TS_IRQ_GPIO;
-			mxt_device_info[0].irq =
-					MSM_GPIO_TO_INT(MXT_SKU6_TS_IRQ_GPIO);
-		}
-
-		rc = gpio_tlmm_config(GPIO_CFG(mxt_platform_data.irq_gpio,
-				0, GPIO_CFG_INPUT, GPIO_CFG_PULL_UP,
+		rc = gpio_tlmm_config(GPIO_CFG(MXT_TS_IRQ_GPIO, 0,
+				GPIO_CFG_INPUT, GPIO_CFG_PULL_UP,
 				GPIO_CFG_8MA), GPIO_CFG_ENABLE);
 		if (rc) {
 			pr_err("%s: gpio_tlmm_config for %d failed\n",
-				__func__, mxt_platform_data.irq_gpio);
+				__func__, MXT_TS_IRQ_GPIO);
 		}
 
 		rc = gpio_tlmm_config(GPIO_CFG(MXT_TS_RESET_GPIO, 0,
@@ -857,9 +1463,7 @@ void __init qrd7627a_add_io_devices(void)
 		ft5x06_touchpad_setup();
 	}
 
-	/* headset and power key*/
-	/* ignore end key as this target doesn't need it */
-	hs_platform_data.ignore_end_key = true;
+	/* headset */
 	platform_device_register(&hs_pdev);
 
 	/* vibrator */
@@ -868,18 +1472,18 @@ void __init qrd7627a_add_io_devices(void)
 #endif
 
 	/* keypad */
-	if (machine_is_msm8625_evt() || machine_is_msm7627a_evt())
+	if (machine_is_msm8625_evt())
 		kp_matrix_info_8625.keymap = keymap_8625_evt;
 
 	if (machine_is_msm7627a_evb() || machine_is_msm8625_evb() ||
-		machine_is_msm7627a_evt() || machine_is_msm8625_evt())
+			machine_is_msm8625_evt())
 		platform_device_register(&kp_pdev_8625);
 	else if (machine_is_msm7627a_qrd3() || machine_is_msm8625_qrd7())
 		platform_device_register(&kp_pdev_sku3);
 
 	/* leds */
 	if (machine_is_msm7627a_evb() || machine_is_msm8625_evb() ||
-		machine_is_msm7627a_evt() || machine_is_msm8625_evt()) {
+						machine_is_msm8625_evt()) {
 		platform_device_register(&pmic_mpp_leds_pdev);
 		platform_device_register(&tricolor_leds_pdev);
 	}

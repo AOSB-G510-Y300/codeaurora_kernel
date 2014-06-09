@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -56,8 +56,10 @@ module_param_named(debug_enable, msm_rmnet_bam_debug_mask,
 /* Configure device instances */
 #define RMNET_DEVICE_COUNT (8)
 
+#ifndef CONFIG_HUAWEI_KERNEL
 /* allow larger frames */
 #define RMNET_DATA_LEN 2000
+#endif
 
 #define DEVICE_ID_INVALID   -1
 

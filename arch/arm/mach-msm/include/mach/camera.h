@@ -1,4 +1,4 @@
-/* Copyright (c) 2009-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -468,6 +468,10 @@ static inline int msm_flash_ctrl(
 }
 #endif
 
+/* Add set led state interface for all type of leds. */
+extern void register_led_set_state( int (* func)(unsigned led_state) );
+extern int call_led_set_state(unsigned led_state);
+/* delete tps61310 set state interface */
 
 
 void msm_camvfe_init(void);

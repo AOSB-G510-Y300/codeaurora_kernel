@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -913,7 +913,8 @@ void  vidc_timer_start(void *timer_handle, u32 time_out)
 	struct vidc_timer *hw_timer = (struct vidc_timer *)timer_handle;
 	DBG("%s(): start timer\n ", __func__);
 	if (hw_timer) {
-		hw_timer->hw_timeout.expires = jiffies + 1*HZ;
+        //hw_timer->hw_timeout.expires = jiffies + 1*HZ;	
+        hw_timer->hw_timeout.expires = jiffies + 10*HZ;	
 		add_timer(&hw_timer->hw_timeout);
 	}
 }

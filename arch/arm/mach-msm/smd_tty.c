@@ -1,7 +1,7 @@
 /* arch/arm/mach-msm/smd_tty.c
  *
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2009-2012, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
  * Author: Brian Swetland <swetland@google.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -544,9 +544,20 @@ static int __init smd_tty_init(void)
 			 */
 			int legacy_ds = 0;
 
+#ifndef CONFIG_HUAWEI_KERNEL
 			legacy_ds |= cpu_is_msm7x01() || cpu_is_msm7x25();
 			legacy_ds |= cpu_is_msm7x27() || cpu_is_msm7x30();
 			legacy_ds |= cpu_is_qsd8x50() || cpu_is_msm8x55();
+#else
+            /* when cpu is msm7x27a or msm8x55, legacy_ds keeps 0.
+             * so smd_tty device and driver for "DS" is not registered.
+             * we use u_smd driver instead.
+             */
+            legacy_ds |= cpu_is_msm7x01() || cpu_is_msm7x25();
+			legacy_ds |= cpu_is_msm7x27() || cpu_is_msm7x30();
+            legacy_ds |= cpu_is_qsd8x50();
+#endif
+            
 			/*
 			 * use legacy mode for 8660 Standalone (subtype 0)
 			 */

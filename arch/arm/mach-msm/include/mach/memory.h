@@ -1,7 +1,7 @@
 /* arch/arm/mach-msm/include/mach/memory.h
  *
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2009-2012, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -42,7 +42,12 @@
 
 #define EBI0_PHYS_OFFSET PHYS_OFFSET
 #define EBI0_PAGE_OFFSET PAGE_OFFSET
+/* modified for 1G ddr memory support */
+#ifdef CONFIG_HUAWEI_KERNEL
+#define EBI0_SIZE 0x20000000
+#else
 #define EBI0_SIZE 0x10000000
+#endif
 
 #ifndef __ASSEMBLY__
 

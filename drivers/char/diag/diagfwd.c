@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -39,11 +39,19 @@
 #endif
 #include "diag_dci.h"
 
+
+#ifdef CONFIG_HUAWEI_FEATURE_PHUDIAG
+#include "phudiagchar.h"
+#include "phudiagfwd.h"
+#endif
 #define MODE_CMD		41
 #define RESET_ID		2
 #define ALL_EQUIP_ID		100
 #define ALL_SSID		-1
 #define MAX_SSID_PER_RANGE	100
+#ifdef CONFIG_HUAWEI_FEATURE_PHUDIAG
+int phudiagfwd_usb_diag_suspend_packet_num = 0;
+#endif
 
 int diag_debug_buf_idx;
 unsigned char diag_debug_buf[1024];
@@ -64,9 +72,6 @@ struct mask_info {
 do {									\
 	*(int *)(msg_mask_tbl_ptr) = MSG_SSID_ ## XX;			\
 	msg_mask_tbl_ptr += 4;						\
-	*(int *)(msg_mask_tbl_ptr) = MSG_SSID_ ## XX ## _LAST;		\
-	msg_mask_tbl_ptr += 4;						\
-	/* mimic the last entry as actual_last while creation */	\
 	*(int *)(msg_mask_tbl_ptr) = MSG_SSID_ ## XX ## _LAST;		\
 	msg_mask_tbl_ptr += 4;						\
 	/* increment by MAX_SSID_PER_RANGE cells */			\
@@ -272,9 +277,29 @@ void __diag_smd_send_req(void)
 			if (!buf)
 				pr_info("Out of diagmem for Modem\n");
 			else {
+				#ifdef CONFIG_HUAWEI_FEATURE_PHUDIAG
+				mutex_lock(&phudriver->diagchar_mutex);
+				if(phudriver->opened)
+				{	
+					if(r != phudiagfwd_ring_buf_set_data_before_process(phudriver->in_buf, r))
+					{
+						printk(KERN_INFO "__diag_smd_send_req write in_buf out of memory !\n");
+						mutex_unlock(&phudriver->diagchar_mutex);
+						return;
+					}
+				}
+				#endif
 				APPEND_DEBUG('i');
 				smd_read(driver->ch, buf, r);
 				APPEND_DEBUG('j');
+				#ifdef CONFIG_HUAWEI_FEATURE_PHUDIAG
+				if(phudriver->opened)
+				{
+					memcpy(phudriver->in_buf->end,buf,r);
+					phudriver->in_buf->end += r;
+				}
+				mutex_unlock(&phudriver->diagchar_mutex);
+				#endif
 				write_ptr_modem->length = r;
 				*in_busy_ptr = 1;
 				diag_device_write(buf, MODEM_DATA,
@@ -285,6 +310,19 @@ void __diag_smd_send_req(void)
 		(driver->logging_mode == MEMORY_DEVICE_MODE)) {
 		chk_logging_wakeup();
 	}
+
+	#ifdef CONFIG_HUAWEI_FEATURE_PHUDIAG
+	phudiagfwd_usb_diag_suspend_packet_num++;
+	mutex_lock(&phudriver->diagchar_mutex);
+	if(phudriver->opened && NULL == buf 
+	   && phudiagfwd_usb_diag_suspend_packet_num > 10 )
+	{
+		phudiagfwd_usb_diag_suspend_packet_num = 10;
+		phudiagfwd_read_data_from_smd();
+	}
+	mutex_unlock(&phudriver->diagchar_mutex);
+	#endif
+		
 }
 
 int diag_device_write(void *buf, int proc_num, struct diag_request *write_ptr)
@@ -512,7 +550,8 @@ static void diag_print_mask_table(void)
 {
 /* Enable this to print mask table when updated */
 #ifdef MASK_DEBUG
-	int first, last, actual_last;
+	int first;
+	int last;
 	uint8_t *ptr = driver->msg_masks;
 	int i = 0;
 	pr_info("diag: F3 message mask table\n");
@@ -521,12 +560,11 @@ static void diag_print_mask_table(void)
 		ptr += 4;
 		last = *(uint32_t *)ptr;
 		ptr += 4;
-		actual_last = *(uint32_t *)ptr;
-		ptr += 4;
-		pr_info("diag: SSID %d, %d - %d\n", first, last, actual_last);
-		for (i = 0 ; i <= actual_last - first ; i++)
-			pr_info("diag: MASK:%x\n", *((uint32_t *)ptr + i));
+		printk(KERN_INFO "SSID %d - %d\n", first, last);
+		for (i = 0 ; i <= last - first ; i++)
+			printk(KERN_INFO "MASK:%x\n", *((uint32_t *)ptr + i));
 		ptr += MAX_SSID_PER_RANGE*4;
+
 	}
 #endif
 }
@@ -569,7 +607,7 @@ static void diag_set_msg_mask(int rt_mask)
 	mutex_lock(&driver->diagchar_mutex);
 	while (*(uint32_t *)(ptr + 4)) {
 		first_ssid = *(uint32_t *)ptr;
-		ptr += 8; /* increment by 8 to skip 'last' */
+		ptr += 4;
 		last_ssid = *(uint32_t *)ptr;
 		ptr += 4;
 		parse_ptr = ptr;
@@ -585,8 +623,9 @@ static void diag_set_msg_mask(int rt_mask)
 
 static void diag_update_msg_mask(int start, int end , uint8_t *buf)
 {
-	int found = 0, first, last, actual_last;
-	uint8_t *actual_last_ptr;
+	int found = 0;
+	int first;
+	int last;
 	uint8_t *ptr = driver->msg_masks;
 	uint8_t *ptr_buffer_start = &(*(driver->msg_masks));
 	uint8_t *ptr_buffer_end = &(*(driver->msg_masks)) + MSG_MASK_SIZE;
@@ -599,23 +638,23 @@ static void diag_update_msg_mask(int start, int end , uint8_t *buf)
 		ptr += 4;
 		last = *(uint32_t *)ptr;
 		ptr += 4;
-		actual_last = *(uint32_t *)ptr;
-		actual_last_ptr = ptr;
-		ptr += 4;
-		if (start >= first && start <= actual_last) {
+		if (start >= first && start <= last) {
 			ptr += (start - first)*4;
-			if (end > actual_last) {
-				pr_info("diag: ssid range mismatch\n");
-				actual_last = end;
-				*(uint32_t *)(actual_last_ptr) = end;
-			}
-			if (CHK_OVERFLOW(ptr_buffer_start, ptr, ptr_buffer_end,
-					  (((end - start)+1)*4))) {
-				pr_debug("diag: update ssid start %d, end %d\n",
-								 start, end);
-				memcpy(ptr, buf , ((end - start)+1)*4);
-			} else
-				pr_alert("diag: Not enough space MSG_MASK\n");
+			if (end <= last)
+				if (CHK_OVERFLOW(ptr_buffer_start, ptr,
+						  ptr_buffer_end,
+						  (((end - start)+1)*4))) {
+					pr_debug("diag: update ssid start %d,"
+						 " end %d\n", start, end);
+					memcpy(ptr, buf , ((end - start)+1)*4);
+				} else
+					printk(KERN_CRIT "Not enough"
+							 " buffer space for"
+							 " MSG_MASK\n");
+			else
+				printk(KERN_INFO "Unable to copy"
+						 " mask change\n");
+
 			found = 1;
 			break;
 		} else {
@@ -630,16 +669,16 @@ static void diag_update_msg_mask(int start, int end , uint8_t *buf)
 			ptr += 4;
 			memcpy(ptr, &(end), 4);
 			ptr += 4;
-			memcpy(ptr, &(end), 4); /* create actual_last entry */
-			ptr += 4;
 			pr_debug("diag: adding NEW ssid start %d, end %d\n",
 								 start, end);
 			memcpy(ptr, buf , ((end - start) + 1)*4);
 		} else
-			pr_alert("diag: Not enough buffer space for MSG_MASK\n");
+			printk(KERN_CRIT " Not enough buffer"
+					 " space for MSG_MASK\n");
 	}
 	mutex_unlock(&driver->diagchar_mutex);
 	diag_print_mask_table();
+
 }
 
 void diag_toggle_event_mask(int toggle)
@@ -780,19 +819,13 @@ void diag_send_data(struct diag_master_table entry, unsigned char *buf,
 					if ((int)(*(char *)(buf+1)) ==
 						RESET_ID)
 						return;
-				mutex_lock(&driver->diag_data_modem_mutex);
 				smd_write(driver->ch, buf, len);
-				mutex_unlock(&driver->diag_data_modem_mutex);
 			} else if (entry.client_id == QDSP_PROC &&
 							 driver->chqdsp) {
-				mutex_lock(&driver->diag_data_lpass_mutex);
 				smd_write(driver->chqdsp, buf, len);
-				mutex_unlock(&driver->diag_data_lpass_mutex);
 			} else if (entry.client_id == WCNSS_PROC &&
 							 driver->ch_wcnss) {
-				mutex_lock(&driver->diag_data_wcnss_mutex);
 				smd_write(driver->ch_wcnss, buf, len);
-				mutex_unlock(&driver->diag_data_wcnss_mutex);
 			} else {
 				pr_alert("diag: incorrect channel");
 			}
@@ -921,7 +954,7 @@ void diag_send_msg_mask_update(smd_channel_t *ch, int updated_ssid_first,
 						int updated_ssid_last, int proc)
 {
 	void *buf = driver->buf_msg_mask_update;
-	int first, last, actual_last, size = -ENOMEM, retry_count = 0, timer;
+	int first, last, size = -ENOMEM, retry_count = 0, timer;
 	int header_size = sizeof(struct diag_ctrl_msg_mask);
 	uint8_t *ptr = driver->msg_masks;
 
@@ -931,21 +964,18 @@ void diag_send_msg_mask_update(smd_channel_t *ch, int updated_ssid_first,
 		ptr += 4;
 		last = *(uint32_t *)ptr;
 		ptr += 4;
-		actual_last = *(uint32_t *)ptr;
-		ptr += 4;
-		if ((updated_ssid_first >= first && updated_ssid_last <=
-			 actual_last) || (updated_ssid_first == ALL_SSID)) {
+		if ((updated_ssid_first >= first && updated_ssid_last <= last)
+					 || (updated_ssid_first == ALL_SSID)) {
 			/* send f3 mask update */
 			driver->msg_mask->cmd_type = DIAG_CTRL_MSG_F3_MASK;
-			driver->msg_mask->msg_mask_size = actual_last -
-								 first + 1;
+			driver->msg_mask->msg_mask_size = last - first + 1;
 			driver->msg_mask->data_len = 11 +
 					 4 * (driver->msg_mask->msg_mask_size);
 			driver->msg_mask->stream_id = 1; /* 2, if dual stream */
 			driver->msg_mask->status = 3; /* status valid mask */
 			driver->msg_mask->msg_mode = 0; /* Legcay mode */
 			driver->msg_mask->ssid_first = first;
-			driver->msg_mask->ssid_last = actual_last;
+			driver->msg_mask->ssid_last = last;
 			memcpy(buf, driver->msg_mask, header_size);
 			memcpy(buf+header_size, ptr,
 				 4 * (driver->msg_mask->msg_mask_size));
@@ -967,8 +997,8 @@ void diag_send_msg_mask_update(smd_channel_t *ch, int updated_ssid_first,
 	 "fail %d, tried %d\n", proc, size,
 	 header_size + 4*(driver->msg_mask->msg_mask_size));
 				else
-					pr_debug("diag: sending mask update for ssid first %d, last %d on PROC %d\n",
-						first, actual_last, proc);
+					pr_debug("diag: sending mask update for"
+		"ssid first %d, last %d on PROC %d\n", first, last, proc);
 			} else
 				pr_err("diag: proc %d, ch invalid msg mask"
 						 "update\n", proc);
@@ -1060,7 +1090,7 @@ static int diag_process_apps_pkt(unsigned char *buf, int len)
 			rt_mask_ptr = driver->msg_masks;
 			while (*(uint32_t *)(rt_mask_ptr + 4)) {
 				rt_first_ssid = *(uint32_t *)rt_mask_ptr;
-				rt_mask_ptr += 8; /* +8 to skip 'last' */
+				rt_mask_ptr += 4;
 				rt_last_ssid = *(uint32_t *)rt_mask_ptr;
 				rt_mask_ptr += 4;
 				if (ssid_first == rt_first_ssid && ssid_last ==
@@ -1230,6 +1260,21 @@ static int diag_process_apps_pkt(unsigned char *buf, int len)
 					packet_type = 0;
 				}
 			}
+/* support automation diag command */
+#ifdef CONFIG_HUAWEI_KERNEL
+			/* automation cmd_code is 0xF6 */
+			/* judge if it is automation cmd_code */
+			else if ((entry.cmd_code == 255) 
+					&& (entry.subsys_id == 0xF6) 
+					&& (cmd_code == 0xF6))
+			{
+				if ((entry.cmd_code_lo <= subsys_id) && (entry.cmd_code_hi >= subsys_id))
+				{
+					diag_send_data(entry, buf, len,data_type);
+					packet_type = 0;
+				}
+			}
+#endif
 		}
 	}
 #if defined(CONFIG_DIAG_OVER_USB)
@@ -1526,9 +1571,6 @@ void diag_process_hdlc(void *data, unsigned len)
 {
 	struct diag_hdlc_decode_type hdlc;
 	int ret, type = 0;
-
-	mutex_lock(&driver->diag_hdlc_mutex);
-
 	pr_debug("diag: HDLC decode fn, len of data  %d\n", len);
 	hdlc.dest_ptr = driver->hdlc_buf;
 	hdlc.dest_size = USB_MAX_OUT_BUF;
@@ -1561,12 +1603,9 @@ void diag_process_hdlc(void *data, unsigned len)
 		if (chk_apps_only()) {
 			diag_send_error_rsp(hdlc.dest_idx);
 		} else { /* APQ 8060, Let Q6 respond */
-			if (driver->chqdsp) {
-				mutex_lock(&driver->diag_data_lpass_mutex);
+			if (driver->chqdsp)
 				smd_write(driver->chqdsp, driver->hdlc_buf,
 						  hdlc.dest_idx - 3);
-				mutex_unlock(&driver->diag_data_lpass_mutex);
-			}
 		}
 		type = 0;
 	}
@@ -1580,9 +1619,7 @@ void diag_process_hdlc(void *data, unsigned len)
 	/* ignore 2 bytes for CRC, one for 7E and send */
 	if ((driver->ch) && (ret) && (type) && (hdlc.dest_idx > 3)) {
 		APPEND_DEBUG('g');
-		mutex_lock(&driver->diag_data_modem_mutex);
 		smd_write(driver->ch, driver->hdlc_buf, hdlc.dest_idx - 3);
-		mutex_unlock(&driver->diag_data_modem_mutex);
 		APPEND_DEBUG('h');
 #ifdef DIAG_DEBUG
 		printk(KERN_INFO "writing data to SMD, pkt length %d\n", len);
@@ -1590,8 +1627,6 @@ void diag_process_hdlc(void *data, unsigned len)
 			       1, DUMP_PREFIX_ADDRESS, data, len, 1);
 #endif /* DIAG DEBUG */
 	}
-
-	mutex_unlock(&driver->diag_hdlc_mutex);
 }
 
 #ifdef CONFIG_DIAG_OVER_USB
@@ -1860,6 +1895,9 @@ static int diag_smd_probe(struct platform_device *pdev)
 	pm_runtime_enable(&pdev->dev);
 	pr_debug("diag: open SMD port, Id = %d, r = %d\n", pdev->id, r);
 
+	#ifdef CONFIG_HUAWEI_FEATURE_PHUDIAG
+	phudriver->ch = driver->ch;
+	#endif
 	return 0;
 }
 
@@ -1906,10 +1944,6 @@ void diagfwd_init(void)
 	driver->read_len_legacy = 0;
 	driver->use_device_tree = has_device_tree();
 	mutex_init(&driver->diag_cntl_mutex);
-	mutex_init(&driver->diag_hdlc_mutex);
-	mutex_init(&driver->diag_data_modem_mutex);
-	mutex_init(&driver->diag_data_lpass_mutex);
-	mutex_init(&driver->diag_data_wcnss_mutex);
 
 	if (driver->event_mask == NULL) {
 		driver->event_mask = kzalloc(sizeof(
@@ -2122,6 +2156,10 @@ void diagfwd_init(void)
 		goto err;
 	}
 #endif
+	#ifdef CONFIG_HUAWEI_FEATURE_PHUDIAG
+	phudriver->diag_wq = driver->diag_wq;
+	phudriver->diag_read_smd_work = &(driver->diag_read_smd_work);
+	#endif
 	platform_driver_register(&msm_smd_ch1_driver);
 	platform_driver_register(&diag_smd_lite_driver);
 

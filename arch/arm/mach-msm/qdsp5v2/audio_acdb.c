@@ -1,4 +1,4 @@
-/* Copyright (c) 2009-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1364,7 +1364,11 @@ static s32 acdb_get_calibration(void)
 
 	acdb_cmd.command_id = ACDB_GET_DEVICE_TABLE;
 	acdb_cmd.device_id = acdb_data.device_info->acdb_id;
-	acdb_cmd.network_id = 0x0108B153;
+    #ifdef CONFIG_HUAWEI_KERNEL
+	acdb_cmd.network_id = ACDB_GSM_NB; //0x0108b155
+    #else
+    acdb_cmd.network_id = 0x0108B153;
+    #endif
 	acdb_cmd.sample_rate_id = acdb_data.device_info->sample_rate;
 	acdb_cmd.total_bytes = ACDB_BUF_SIZE;
 	acdb_cmd.phys_buf = (u32 *)acdb_data.phys_addr;

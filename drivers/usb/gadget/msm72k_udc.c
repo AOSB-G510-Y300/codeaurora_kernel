@@ -2,7 +2,7 @@
  * Driver for HighSpeed USB Client Controller in MSM7K
  *
  * Copyright (C) 2008 Google, Inc.
- * Copyright (c) 2009-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
  * Author: Mike Lockwood <lockwood@android.com>
  *         Brian Swetland <swetland@google.com>
  *
@@ -46,6 +46,19 @@
 #include <linux/uaccess.h>
 #include <linux/wakelock.h>
 
+#ifdef CONFIG_HUAWEI_KERNEL
+#include <mach/oem_rapi_client.h>
+#include <asm-arm/huawei/usb_switch_huawei.h>
+#endif  /* CONFIG_HUAWEI_KERNEL */
+
+#ifdef CONFIG_HUAWEI_KERNEL
+#ifdef CONFIG_HUAWEI_POWER_DOWN_CHARGE
+#include <linux/hardware_self_adapt.h>
+#define POWER_OFF_CHARGE    1
+#define LED_CHECK_PERIOD        (3*HZ)
+static unsigned int charge_flag = 0; //poweroff charge flag
+#endif
+#endif
 static const char driver_name[] = "msm72k_udc";
 
 /* #define DEBUG */
@@ -231,6 +244,9 @@ struct usb_info {
 static const struct usb_ep_ops msm72k_ep_ops;
 static struct usb_info *the_usb_info;
 
+#ifdef CONFIG_HUAWEI_KERNEL
+static struct wake_lock charger_wlock;
+#endif
 static int msm72k_wakeup(struct usb_gadget *_gadget);
 static int msm72k_pullup_internal(struct usb_gadget *_gadget, int is_active);
 static int msm72k_set_halt(struct usb_ep *_ep, int value);
@@ -469,6 +485,10 @@ static void usb_chg_detect(struct work_struct *w)
 	if (temp == USB_CHG_TYPE__WALLCHARGER) {
 		pm_runtime_put_sync(&ui->pdev->dev);
 		wake_unlock(&ui->wlock);
+#ifdef CONFIG_HUAWEI_KERNEL
+		wake_lock(&charger_wlock);		
+		printk(KERN_ERR "%s:lock charger_wlock\n",__func__);
+#endif
 	}
 }
 
@@ -516,15 +536,6 @@ static void config_ept(struct msm_endpoint *ept)
 {
 	struct usb_info *ui = ept->ui;
 	unsigned cfg = CONFIG_MAX_PKT(ept->ep.maxpacket) | CONFIG_ZLT;
-	const struct usb_endpoint_descriptor *desc = ept->ep.desc;
-	unsigned mult = 0;
-
-	if (desc && ((desc->bmAttributes & USB_ENDPOINT_XFERTYPE_MASK)
-				== USB_ENDPOINT_XFER_ISOC)) {
-		cfg &= ~(CONFIG_MULT);
-		mult = ((ept->ep.maxpacket >> CONFIG_MULT_SHIFT) + 1) & 0x03;
-		cfg |= (mult << (ffs(CONFIG_MULT) - 1));
-	}
 
 	/* ep0 out needs interrupt-on-setup */
 	if (ept->bit == 0)
@@ -1156,6 +1167,10 @@ static void handle_endpoint(struct usb_info *ui, unsigned bit)
 	int dtd_update_fail_count_chk = 10;
 	int check_bit = 0;
 	unsigned info;
+#ifdef CONFIG_HUAWEI_KERNEL
+	/* save the dtd_update_fail_count_chk origin value for while cycle */
+	const int const_fail_count_chk = dtd_update_fail_count_chk;
+#endif
 
 	/*
 	INFO("handle_endpoint() %d %s req=%p(%08x)\n",
@@ -1200,7 +1215,20 @@ dequeue:
 				break;
 			}
 		}
+#ifdef CONFIG_HUAWEI_KERNEL
+		/* !!!!!!!!!!!! here is very important for this case !!!!!!!!!!!!!!
+		 * dequeue every req in ept for avoid losting interrupt.
+		 * If the req_dequeue is set 0, the download only continue about
+		 * one hour. Only the req_dequeue is set to 1, the issue can fixed.
+		 */
+		req_dequeue = 1;
+		/* if  req_dequeue is 1, the dtd_update_fail_count_chk may be use 
+		 * many times. so we must set back it's origin value
+		 */
+		dtd_update_fail_count_chk = const_fail_count_chk;
+#else
 		req_dequeue = 0;
+#endif
 
 		del_timer(&ept->prime_timer);
 		/* advance ept queue to the next request */
@@ -1258,9 +1286,6 @@ static void flush_endpoint_sw(struct msm_endpoint *ept)
 	struct usb_info *ui = ept->ui;
 	struct msm_request *req, *next_req = NULL;
 	unsigned long flags;
-
-	if (!ept->req)
-		return;
 
 	/* inactive endpoints have nothing to do here */
 	if (ept->ep.maxpacket == 0)
@@ -1378,6 +1403,12 @@ static irqreturn_t usb_interrupt(int irq, void *data)
 			 */
 			dev_dbg(&ui->pdev->dev,
 					"usb: notify offline\n");
+
+#ifdef CONFIG_HUAWEI_KERNEL 			
+            /* to disable sending of the disconnected uevent */
+			android_disable_send_uevent(1);
+#endif
+            
 			ui->driver->disconnect(&ui->gadget);
 			/* cancel pending ep0 transactions */
 			flush_endpoint(&ui->ep0out);
@@ -1652,20 +1683,6 @@ static void usb_do_work(struct work_struct *w)
 				usb_phy_set_power(ui->xceiv, 0);
 
 				if (ui->irq) {
-					/* Disable and acknowledge all
-					 * USB interrupts before freeing
-					 * irq, so that no USB spurious
-					 * interrupt occurs during USB cable
-					 * disconnect which may lead to
-					 * IRQ nobody cared error.
-					 */
-					writel_relaxed(0, USB_USBINTR);
-					writel_relaxed(readl_relaxed(USB_USBSTS)
-								, USB_USBSTS);
-					/* Ensure that above STOREs are
-					 * completed before enabling
-					 * interrupts */
-					wmb();
 					free_irq(ui->irq, ui);
 					ui->irq = 0;
 				}
@@ -1677,7 +1694,26 @@ static void usb_do_work(struct work_struct *w)
 				usb_do_work_check_vbus(ui);
 				pm_runtime_put_noidle(&ui->pdev->dev);
 				pm_runtime_suspend(&ui->pdev->dev);
-				wake_unlock(&ui->wlock);
+#ifdef CONFIG_HUAWEI_KERNEL
+#ifdef CONFIG_HUAWEI_POWER_DOWN_CHARGE
+				if( POWER_OFF_CHARGE == charge_flag )
+				{
+					/* realse the wakelock after 3 second in order 
+					 * to set the led off in power off charging
+					 */
+					wake_lock_timeout(&ui->wlock, LED_CHECK_PERIOD);
+					wake_lock_timeout(&charger_wlock, LED_CHECK_PERIOD);	
+				}
+				else
+#endif		
+				{
+					wake_unlock(&ui->wlock);
+					wake_unlock(&charger_wlock);				
+					printk(KERN_ERR "%s:unlock charger_wlock\n",__func__);
+				}
+#else
+			wake_unlock(&ui->wlock);
+#endif		
 				break;
 			}
 			if (flags & USB_FLAG_SUSPEND) {
@@ -2149,6 +2185,7 @@ static void usb_debugfs_init(struct usb_info *ui) {}
 static int
 msm72k_enable(struct usb_ep *_ep, const struct usb_endpoint_descriptor *desc)
 {
+	/* Qualcomm patch to fix NULL pointer dereference crash */
 	struct msm_endpoint *ept;
 	unsigned char ep_type;
 
@@ -2205,9 +2242,6 @@ msm72k_queue(struct usb_ep *_ep, struct usb_request *req, gfp_t gfp_flags)
 	struct msm_endpoint *ep = to_msm_endpoint(_ep);
 	struct usb_info *ui = ep->ui;
 
-	if (!atomic_read(&ui->softconnect))
-		return -ENODEV;
-
 	if (ep == &ui->ep0in) {
 		struct msm_request *r = to_msm_request(req);
 		if (!req->length)
@@ -2234,13 +2268,6 @@ static int msm72k_dequeue(struct usb_ep *_ep, struct usb_request *_req)
 
 	struct msm_request *temp_req;
 	unsigned long flags;
-
-	if (ep->num == 0) {
-		/* Flush both out and in control endpoints */
-		flush_endpoint(&ui->ep0out);
-		flush_endpoint(&ui->ep0in);
-		return 0;
-	}
 
 	if (!(ui && req && ep->req))
 		return -EINVAL;
@@ -2644,6 +2671,94 @@ static ssize_t show_usb_chg_type(struct device *dev,
 
 	return count;
 }
+
+#ifdef CONFIG_HUAWEI_KERNEL
+/*
+ * the function for stitching usb mode
+ * @dev: usb gadget device
+ * @attr: the atrribute of device
+ * @buf: the buf is to be written
+ * @size: the size of buf
+ * Return value: @size success, -1 fail
+ * Side effect : none
+ */
+static ssize_t msm_hsusb_store_fixusb(struct device *dev,
+					  struct device_attribute *attr,
+					  const char *buf, size_t size)
+{
+	unsigned long pid_index = 0;
+    unsigned nv_item = 4526;
+    int  rval = -1;
+    
+    USB_PR("%s, buf=%s\n", __func__, buf);
+	if (!strict_strtoul(buf, 10, &pid_index))
+    {
+        /* factory mode, normal mode, google mode, slate test mode, authentication mode
+         * are supported. Return fail if users want to switch to other mode.
+         */
+    	if (pid_index != ORI_INDEX && pid_index != CDROM_INDEX && pid_index != GOOGLE_INDEX
+        	&& pid_index != SLATE_TEST_INDEX && pid_index != AUTH_INDEX )
+    	{
+    		USB_PR("pid_index %ld is not supported. So fail to switch to this mode.\n", pid_index);
+    		return -1;
+    	}
+        
+    	if (0 == usb_para_data.usb_para.usb_serial[0] && GOOGLE_INDEX == pid_index)
+    	{
+    		USB_PR("Usb serial number is null in google mode. So fail to switch to google mode.\n");
+    		return -1;
+    	}
+    	
+        /* update nv_item when user set a pid_index that is differnt from the present nv_item */
+        if(usb_para_data.usb_para.usb_pid_index != pid_index)
+        {
+            /* usb rpc to replace pcom mechanism for fix reset issue */
+            rval = (int)oem_rapi_write_nv(nv_item, (char *)&pid_index, (u8)sizeof(pid_index)); 
+            if(0 == rval)
+            {
+                USB_PR("Fixusb write OK! nv(%d)=%d, rval=%d\n", nv_item, (int)pid_index, rval);
+            }
+            else
+            {
+                USB_PR("Fixusb write failed! nv(%d)=%d, rval=%d\n", nv_item, (int)pid_index, rval);
+            }
+
+            /* update usb_para_data.usb_para.usb_pid_index */
+            usb_para_data.usb_para.usb_pid_index = pid_index;
+            USB_PR("usb_pid_index updates to : %d \n", usb_para_data.usb_para.usb_pid_index);
+        }
+       
+		usb_port_switch_request(pid_index);
+	}
+    else
+	{
+		USB_PR("%s: Fixusb conversion failed\n", __func__);
+	}
+
+	return size;
+}
+
+/*
+ * the function for stitching usb mode
+ * @dev: usb gadget device
+ * @attr: the atrribute of device
+ * @buf: the buf is to be read
+ * Return value: >0 success, 0 fail
+ * Side effect : none
+ */
+static ssize_t msm_hsusb_show_fixusb(struct device *dev,
+					 struct device_attribute *attr,
+					 char *buf)
+{
+	int i;
+    unsigned nv_item = 4526;
+
+	i = scnprintf(buf, PAGE_SIZE, "Fixusb read nv(%d)=%d, rval=%d\n", nv_item, usb_para_data.usb_para.usb_pid_index, 0);
+	return i;
+}
+
+static DEVICE_ATTR(fixusb, 0664, msm_hsusb_show_fixusb, msm_hsusb_store_fixusb);
+#endif  /* CONFIG_HUAWEI_KERNEL */
 static DEVICE_ATTR(wakeup, S_IWUSR, 0, usb_remote_wakeup);
 static DEVICE_ATTR(usb_state, S_IRUSR, show_usb_state, 0);
 static DEVICE_ATTR(usb_speed, S_IRUSR, show_usb_speed, 0);
@@ -2712,6 +2827,13 @@ static int msm72k_probe(struct platform_device *pdev)
 	struct msm_otg *otg;
 	int retval;
 
+#ifdef CONFIG_HUAWEI_KERNEL
+#ifdef CONFIG_HUAWEI_POWER_DOWN_CHARGE
+	/*get power off charge flag*/
+	charge_flag = get_charge_flag();
+#endif
+#endif
+
 	dev_dbg(&pdev->dev, "msm72k_probe\n");
 	ui = kzalloc(sizeof(struct usb_info), GFP_KERNEL);
 	if (!ui)
@@ -2763,6 +2885,11 @@ static int msm72k_probe(struct platform_device *pdev)
 	wake_lock_init(&ui->wlock,
 			WAKE_LOCK_SUSPEND, "usb_bus_active");
 
+#ifdef CONFIG_HUAWEI_KERNEL
+	/*wakelock for charger, prevent arm11 enter sleep.avoid mobile dump.*/
+	wake_lock_init(&charger_wlock, WAKE_LOCK_SUSPEND,"charger_active");
+	printk(KERN_ERR "%s:wakelock init \n",__func__);
+#endif
 	usb_debugfs_init(ui);
 
 	usb_prepare(ui);
@@ -2783,6 +2910,10 @@ static int msm72k_probe(struct platform_device *pdev)
 			__func__, retval);
 		switch_dev_unregister(&ui->sdev);
 		wake_lock_destroy(&ui->wlock);
+#ifdef CONFIG_HUAWEI_KERNEL
+		wake_lock_destroy(&charger_wlock);
+		printk(KERN_ERR "%s:wakelock distroy \n",__func__);
+#endif
 		return usb_free(ui, retval);
 	}
 
@@ -2868,6 +2999,13 @@ static int msm72k_gadget_start(struct usb_gadget_driver *driver,
 		dev_err(&ui->pdev->dev,
 			"failed to create sysfs entry(chg_current):"
 			"err:(%d)\n", retval);
+#ifdef CONFIG_HUAWEI_KERNEL
+	retval = device_create_file(&ui->gadget.dev, &dev_attr_fixusb);
+	if (retval != 0)
+		dev_err(&ui->pdev->dev,
+			"failed to create sysfs entry(fixusb):"
+			"err:(%d)\n", retval);
+#endif  /* CONFIG_HUAWEI_KERNEL */
 
 	dev_dbg(&ui->pdev->dev, "registered gadget driver '%s'\n",
 			driver->driver.name);
@@ -2907,6 +3045,9 @@ static int msm72k_gadget_stop(struct usb_gadget_driver *driver)
 	device_remove_file(&dev->gadget.dev, &dev_attr_usb_speed);
 	device_remove_file(&dev->gadget.dev, &dev_attr_chg_type);
 	device_remove_file(&dev->gadget.dev, &dev_attr_chg_current);
+#ifdef CONFIG_HUAWEI_KERNEL
+	device_remove_file(&dev->gadget.dev, &dev_attr_fixusb);
+#endif  /* CONFIG_HUAWEI_KERNEL */
 	driver->disconnect(&dev->gadget);
 	driver->unbind(&dev->gadget);
 	dev->gadget.dev.driver = NULL;

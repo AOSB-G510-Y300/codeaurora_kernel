@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -50,5 +50,16 @@ struct QMI_QOS_HDR_S {
 	unsigned char    flags;
 	unsigned long    flow_id;
 };
+
+#ifdef CONFIG_HUAWEI_KERNEL
+/*
+ * if there have special requirement need to apply.
+ */
+ #define RMNET_DEFAULT_MAX_MTU 1500
+
+int rmnet_get_max_mtu(void);
+
+#define RMNET_DATA_LEN (rmnet_get_max_mtu())
+#endif
 
 #endif /* _MSM_RMNET_H_ */

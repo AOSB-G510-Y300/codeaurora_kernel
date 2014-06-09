@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2009, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,6 +24,9 @@
 #include <mach/camera.h>
 #include <asm/mach-types.h>
 #include "mt9t013.h"
+#ifdef CONFIG_HUAWEI_HW_DEV_DCT
+#include <linux/hw_dev_dec.h>
+#endif
 
 /*=============================================================
 	SENSOR REGISTER DEFINES
@@ -1473,6 +1476,10 @@ static int mt9t013_sensor_probe(
 		goto probe_done;
 	}
 
+    #ifdef CONFIG_HUAWEI_HW_DEV_DCT
+    /* detect current device successful, set the flag as present */
+    set_hw_dev_flag(DEV_I2C_CAMERA_MAIN);
+    #endif
 	s->s_init = mt9t013_sensor_open_init;
 	s->s_release = mt9t013_sensor_release;
 	s->s_config  = mt9t013_sensor_config;

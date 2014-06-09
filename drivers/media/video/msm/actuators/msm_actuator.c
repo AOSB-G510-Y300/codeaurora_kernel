@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -186,6 +186,8 @@ int32_t msm_actuator_write_focus(
 		}
 		curr_lens_pos = next_lens_pos;
 		usleep(wait_time);
+        if(0 == damping_code_step)
+            break;
 	}
 
 	if (curr_lens_pos != code_boundary) {
@@ -254,8 +256,7 @@ int32_t msm_actuator_move_focus(
 			target_step_pos = dest_step_pos;
 			target_lens_pos =
 				a_ctrl->step_position_table[target_step_pos];
-			if (curr_lens_pos == target_lens_pos)
-				return rc;
+			/*change from Qualcomm. delete some codes*/
 			rc = a_ctrl->func_tbl->
 				actuator_write_focus(
 					a_ctrl,
@@ -276,8 +277,7 @@ int32_t msm_actuator_move_focus(
 			target_step_pos = step_boundary;
 			target_lens_pos =
 				a_ctrl->step_position_table[target_step_pos];
-			if (curr_lens_pos == target_lens_pos)
-				return rc;
+			/*change from Qualcomm. delete some codes*/
 			rc = a_ctrl->func_tbl->
 				actuator_write_focus(
 					a_ctrl,
@@ -414,8 +414,7 @@ int32_t msm_actuator_init(struct msm_actuator_ctrl_t *a_ctrl,
 	}
 	a_ctrl->total_steps = set_info->af_tuning_params.total_steps;
 	a_ctrl->pwd_step = set_info->af_tuning_params.pwd_step;
-	a_ctrl->total_steps = set_info->af_tuning_params.total_steps;
-
+	//delete this line for it is a duplicated written as the line before
 	if (copy_from_user(&a_ctrl->region_params,
 		(void *)set_info->af_tuning_params.region_params,
 		a_ctrl->region_size * sizeof(struct region_params_t)))

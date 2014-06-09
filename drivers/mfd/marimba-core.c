@@ -1,4 +1,4 @@
-/* Copyright (c) 2009-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -856,8 +856,13 @@ static int __devinit marimba_probe(struct i2c_client *client,
 			ssbi_adap = NULL;
 
 		if (!marimba->client) {
+			
+#ifndef CONFIG_HUAWEI_KERNEL
 			dev_err(&marimba->client->dev,
 				"can't attach client %d\n", i);
+#else
+        printk("can't attach client %d\n", i);
+#endif
 			status = -ENOMEM;
 			goto fail;
 		}

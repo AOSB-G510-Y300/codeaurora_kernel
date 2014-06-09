@@ -1,7 +1,7 @@
 /* arch/arm/mach-msm/proc_comm.c
  *
  * Copyright (C) 2007-2008 Google, Inc.
- * Copyright (c) 2009-2012, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
  * Author: Brian Swetland <swetland@google.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -62,6 +62,8 @@ static int msm_proc_comm_disable;
  */
 static int proc_comm_wait_for(unsigned addr, unsigned value)
 {
+	/* merge qcom DEBUG_CODE for RPC crashes */
+#ifndef CONFIG_HUAWEI_RPC_CRASH_DEBUG
 	while (1) {
 		/* Barrier here prevents excessive spinning */
 		mb();
@@ -73,6 +75,37 @@ static int proc_comm_wait_for(unsigned addr, unsigned value)
 
 		udelay(5);
 	}
+#else
+   int ticks = 0;
+   int long_wait = 0;
+
+	while (1) {
+		/* Barrier here prevents excessive spinning */
+		mb();
+		if (readl_relaxed(addr) == value) {
+			if (long_wait)
+				pr_err("%s: total wait time %dus\n", __func__, ticks * 5);
+			return 0;
+		}
+		if (smsm_check_for_modem_crash()) {
+			pr_err("%s: modem crashed while writing %x to %x\n",
+			    __func__, value, addr);
+			if (long_wait)
+				pr_err("%s: total wait time %dus\n",
+					__func__, ticks * 5);
+			return -EAGAIN;
+		}
+		udelay(5);
+		ticks++;
+		
+		if (ticks == 10000 /* 50 ms */) {
+			long_wait = 1;
+			pr_err("%s: excessive wait for PCOM\n",
+				__func__);
+			dump_stack();
+		}
+	}
+#endif
 }
 
 void msm_proc_comm_reset_modem_now(void)

@@ -2,7 +2,7 @@
  *
  * MSM MDP Interface (used by framebuffer core)
  *
- * Copyright (c) 2007-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2007-2012, Code Aurora Forum. All rights reserved.
  * Copyright (C) 2007 Google Incorporated
  *
  * This software is licensed under the terms of the GNU General Public
@@ -888,10 +888,12 @@ int _mdp_histogram_ctrl(boolean en, struct mdp_hist_mgmt *mgmt)
 	int ret = 0;
 
 	mutex_lock(&mgmt->mdp_hist_mutex);
-	if (mgmt->mdp_is_hist_start && !mgmt->mdp_is_hist_data && en)
-		ret = mdp_histogram_enable(mgmt);
-	else if (mgmt->mdp_is_hist_data && !en)
-		ret = mdp_histogram_disable(mgmt);
+	if (mgmt->mdp_is_hist_start == TRUE) {
+		if (en)
+			ret = mdp_histogram_enable(mgmt);
+		else
+			ret = mdp_histogram_disable(mgmt);
+	}
 	mutex_unlock(&mgmt->mdp_hist_mutex);
 
 	if (en == false)
@@ -989,6 +991,7 @@ int mdp_histogram_stop(struct fb_info *info, uint32_t block)
 	mgmt->mdp_is_hist_start = FALSE;
 
 	if (!mfd->panel_power_on) {
+		mgmt->mdp_is_hist_data = FALSE;
 		if (mgmt->hist != NULL) {
 			mgmt->hist = NULL;
 			complete(&mgmt->mdp_hist_comp);
@@ -1763,6 +1766,7 @@ void mdp_histogram_handle_isr(struct mdp_hist_mgmt *mgmt)
 }
 
 #ifndef CONFIG_FB_MSM_MDP40
+/* merge qcom patch to solve blue screen when power on */
 irqreturn_t mdp_isr(int irq, void *ptr)
 {
 	uint32 mdp_interrupt = 0;
@@ -2385,6 +2389,13 @@ static int mdp_probe(struct platform_device *pdev)
 #endif
 	static int contSplash_update_done;
 
+/* modem side generate an interrupt,we should clear this interrupt before mdp work */
+#ifdef CONFIG_HUAWEI_KERNEL
+	#ifndef CONFIG_FB_MSM_MDP40
+		uint32 mdp_interrupt = 0;
+	#endif
+#endif
+
 	if ((pdev->id == 0) && (pdev->num_resources > 0)) {
 		mdp_init_pdev = pdev;
 		mdp_pdata = pdev->dev.platform_data;
@@ -2436,6 +2447,13 @@ static int mdp_probe(struct platform_device *pdev)
 	if (!mdp_resource_initialized)
 		return -EPERM;
 
+/* modem side generate an interrupt,we should clear this interrupt before mdp work */
+#ifdef CONFIG_HUAWEI_KERNEL
+	#ifndef CONFIG_FB_MSM_MDP40
+		mdp_interrupt = inp32(MDP_INTR_STATUS);
+		outp32(MDP_INTR_CLEAR, mdp_interrupt);
+	#endif
+#endif
 	mfd = platform_get_drvdata(pdev);
 
 	if (!mfd)

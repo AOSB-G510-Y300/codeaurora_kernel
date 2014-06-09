@@ -1,7 +1,7 @@
 /* drivers/i2c/busses/i2c-msm.c
  *
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2009, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2009, Code Aurora Forum. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -216,6 +216,11 @@ msm_i2c_interrupt(int irq, void *devid)
 				"Write buffer full in ISR on write?\n");
 			err = -EIO;
 			goto out_err;
+		}
+    	if( (dev->msg->addr == 0x1E))//st303_compass address 0x1e
+		{
+			//printk(KERN_ERR "msg->addr=:0x%x \n",dev->msg->addr);
+			udelay(10);
 		}
 
 		if (dev->cnt) {

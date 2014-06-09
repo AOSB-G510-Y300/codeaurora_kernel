@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2010, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2010, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -17,6 +17,8 @@
 #include "msm_fb.h"
 #include "mddihost.h"
 #include <linux/clk.h>
+/*close Mddi Reverse link for resloving blankscreen*/
+#define FEATURE_MDDI_DISABLE_REVERSE 
 
 /* Register offsets in MDDI, applies to both msm_pmdh_base and
  * (u32)msm_emdh_base. */

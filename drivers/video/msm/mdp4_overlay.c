@@ -1,4 +1,4 @@
-/* Copyright (c) 2009-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -3127,6 +3127,17 @@ int mdp4_overlay_unset(struct fb_info *info, int ndx)
 		/* mixer 0 */
 		ctrl->mixer0_played = 0;
 		if (ctrl->panel_mode & MDP4_PANEL_MDDI) {
+            /*for resolving freeze screen because of 60 frame freq and CTS TEST*/
+			if (mdp_hw_revision == MDP4_REVISION_V2_1)
+			/* keep set_flag and unset_flag as mutex ,solve 30fps can't recover 60fps */
+			{
+				mdp4_overlay_status_write(
+					MDP4_OVERLAY_TYPE_UNSET, true);
+				#ifdef CONFIG_HUAWEI_KERNEL
+					mdp4_overlay_status_write(
+						MDP4_OVERLAY_TYPE_SET, false);
+				#endif
+			}
 			if (mfd->panel_power_on)
 				mdp4_mddi_blt_dmap_busy_wait(mfd);
 		}

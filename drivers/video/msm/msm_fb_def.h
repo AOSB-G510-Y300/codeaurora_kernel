@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2010, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2010, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -197,8 +197,11 @@ extern unsigned char *msm_pmdh_base;
 extern unsigned char *msm_emdh_base;
 extern unsigned char *mipi_dsi_base;
 #endif
-
-#undef ENABLE_MDDI_MULTI_READ_WRITE
+#ifdef CONFIG_HUAWEI_KERNEL
+	#define ENABLE_MDDI_MULTI_READ_WRITE
+#else
+	#undef ENABLE_MDDI_MULTI_READ_WRITE
+#endif
 #undef ENABLE_FWD_LINK_SKEW_CALIBRATION
 
 #endif /* MSM_FB_DEF_H */

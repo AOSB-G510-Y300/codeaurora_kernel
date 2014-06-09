@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -812,9 +812,8 @@ u32 vcd_free_buffers_internal(
 			}
 		}
 
+    	vcd_reset_buffer_pool_for_reuse(buf_pool);
 	}
-
-	vcd_reset_buffer_pool_for_reuse(buf_pool);
 
 	return rc;
 }
