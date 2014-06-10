@@ -1064,8 +1064,7 @@ static int msm_fb_blank_sub(int blank_mode, struct fb_info *info,
 			if (ret == 0) {
 				mfd->panel_power_on = TRUE;
                 mfd->panel_driver_on = mfd->op_enable;
-
-*/	
+                
 /* LCD resume completed ,then turn on lcd backlight */
 #ifdef CONFIG_HUAWEI_KERNEL
 				lcd_have_resume = TRUE;
