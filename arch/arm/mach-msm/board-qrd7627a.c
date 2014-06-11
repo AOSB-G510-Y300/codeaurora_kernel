@@ -31,9 +31,9 @@
 #include <linux/memblock.h>
 #include <linux/input/ft5x06_ts.h>
 #include <linux/msm_adc.h>
-#include <linux/ion.h>
+#include <linux/msm_ion.h>
 #include <linux/i2c-gpio.h>
-#include <linux/regulator/onsemi-ncp6335d.h>
+#include <linux/regulator/msm-gpio-regulator.h>
 #include <linux/dma-contiguous.h>
 #include <linux/dma-mapping.h>
 #include <asm/mach/mmc.h>
@@ -676,11 +676,6 @@ static void fix_sizes(void)
 {
 	if (get_ddr_size() > SZ_512M)
 		pmem_adsp_size = CAMERA_ZSL_SIZE;
-	else {
-		if (machine_is_qrd_skud_prime() || machine_is_msm8625q_evbd()
-					|| machine_is_msm8625q_skud())
-			pmem_mdp_size = 0;
-	}
 
 #ifdef CONFIG_ION_MSM
 	msm_ion_audio_size = MSM_PMEM_AUDIO_SIZE;
