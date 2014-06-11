@@ -352,6 +352,7 @@ ARM_FLAGS       = -funswitch-loops \
                   -fsingle-precision-constant \
                   -pipe -finline-functions \
                   -ffast-math \
+                  -mcpu=cortex-a5 \
                   -mfpu=neon \
                   -march=armv7-a \
                   -fvect-cost-model
