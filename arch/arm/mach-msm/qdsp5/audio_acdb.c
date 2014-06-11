@@ -1303,6 +1303,15 @@ err_state:
 }
 EXPORT_SYMBOL(acdb_get_calibration_data);
 
+int is_acdb_enabled()
+{
+	if (acdb_data.handle != NULL)
+		return 1;
+	else
+		return 0;
+}
+EXPORT_SYMBOL(is_acdb_enabled);
+
 static u8 check_device_info_already_present(
 		struct dev_evt_msg device_info,
 			struct acdb_cache_node *acdb_cache_free_node)

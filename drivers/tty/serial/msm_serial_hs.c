@@ -177,6 +177,7 @@ struct msm_hs_port {
 	struct work_struct clock_off_w; /* work for actual clock off */
 	struct workqueue_struct *hsuart_wq; /* hsuart workqueue */
 	struct mutex clk_mutex; /* mutex to guard against clock off/clock on */
+	bool tty_flush_receive;
 	bool rx_discard_flush_issued;
 	bool is_shutdown;
 	bool termios_in_progress;

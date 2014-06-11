@@ -48,4 +48,5 @@
 /* ID used for virtual devices */
 #define PSEUDO_ACDB_ID					0xFFFF
 
+int is_acdb_enabled(void);
 #endif /* _MACH_QDSP5_V2_AUDIO_ACDB_DEF_H */
