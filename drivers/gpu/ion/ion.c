@@ -1538,10 +1538,6 @@ static size_t ion_debug_heap_total(struct ion_client *client,
 {
 	size_t size = 0;
 	struct rb_node *n;
-	size_t size;
-
-	if (!heap->ops->phys)
-		return;
 
 	mutex_lock(&client->lock);
 	for (n = rb_first(&client->handles); n; n = rb_next(n)) {
@@ -1640,6 +1636,7 @@ void ion_debug_mem_map_create(struct seq_file *s, struct ion_heap *heap,
 {
 	struct ion_device *dev = heap->dev;
 	struct rb_node *n;
+	size_t size;
 
 	for (n = rb_first(&dev->buffers); n; n = rb_next(n)) {
 		struct ion_buffer *buffer =

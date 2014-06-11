@@ -29,7 +29,7 @@
 #include <linux/seq_file.h>
 #include <linux/fmem.h>
 #include <linux/iommu.h>
-#include <linux/delay.h>
+#include <linux/dma-mapping.h>
 
 #include <asm/mach/map.h>
 
@@ -240,7 +240,6 @@ static int ion_cp_protect(struct ion_heap *heap, int version, void *data)
 		if (!cp_heap->allocated_bytes)
 			if (ion_on_first_alloc(heap))
 				goto out;
-		}
 
 		ret_value = ion_cp_protect_mem(cp_heap->secure_base,
 				cp_heap->secure_size, cp_heap->permission_type,
@@ -251,6 +250,7 @@ static int ion_cp_protect(struct ion_heap *heap, int version, void *data)
 
 			if (!cp_heap->allocated_bytes)
 				ion_on_last_free(heap);
+
 			atomic_dec(&cp_heap->protect_cnt);
 		} else {
 			cp_heap->heap_protected = HEAP_PROTECTED;
